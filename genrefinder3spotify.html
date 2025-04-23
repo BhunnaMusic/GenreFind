@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Song Finder & Details (Multi-API + Genius + Spotify)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles */
+        body { font-family: 'Inter', sans-serif; }
+        .loader { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #ffffff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; margin-left: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input, button, div, ul, li { border-radius: 0.375rem; }
+        .api-result, .additional-info-section, .consensus-result, .notes-box { margin-top: 1rem; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 0.375rem; }
+        .api-result { background-color: rgba(0, 0, 0, 0.1); }
+        .additional-info-section { background-color: rgba(0, 0, 0, 0.15); }
+        .consensus-result { background-color: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); }
+        .notes-box { background-color: rgba(0, 0, 0, 0.2); border-color: rgba(253, 224, 71, 0.3); color: #fef3c7; font-size: 0.875rem; margin-top: 2rem;}
+        .info-item { margin-bottom: 0.5rem; }
+        .info-item strong, .api-result strong { color: #d1d5db; display: inline-block; min-width: 90px; }
+        .info-item span, .api-result span { color: #f9fafb; }
+        .info-item .not-available { color: #9ca3af; font-style: italic; }
+        .api-result .error { color: #fca5a5; font-style: italic; }
+        .api-result .not-found { color: #fde047; font-style: italic; }
+        .consensus-result .label { color: #a7f3d0; font-weight: 600; display: block; margin-bottom: 0.25rem; }
+        .consensus-result span { color: #d1fae5; font-weight: 500; }
+        .consensus-result .source-info { font-size: 0.8rem; color: #6ee7b7; margin-top: 0.25rem; font-style: italic; }
+        .suggestion-item { padding: 0.75rem; background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; transition: background-color 0.15s ease-in-out; display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; }
+        .suggestion-item:hover { background-color: rgba(255, 255, 255, 0.1); }
+        .suggestion-item .match-percent { color: #93c5fd; font-weight: 500; font-size: 0.875rem; }
+        .suggestion-item .track-artist { font-weight: 600; color: #f9fafb; }
+        .notes-box h4 { font-weight: 700; margin-bottom: 0.5rem; color: #fef9c3; }
+        .notes-box ul { list-style: disc; list-style-position: inside; space-y: 0.25rem; }
+        .notes-box strong { font-weight: 600; color: #fef9c3; }
+        /* Spotify Login Button Style */
+        #spotifyLoginButton { background-color: #1DB954; color: white; font-weight: bold; padding: 0.5rem 1rem; margin-bottom: 1rem; transition: background-color 0.15s ease-in-out; }
+        #spotifyLoginButton:hover { background-color: #1aa34a; }
+        #spotifyStatus { font-size: 0.9rem; margin-bottom: 1rem; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-gray-800 via-purple-900 to-blue-900 min-h-screen flex items-center justify-center p-4 text-gray-100">
+
+    <div class="bg-black bg-opacity-40 backdrop-blur-sm p-6 md:p-8 shadow-2xl w-full max-w-3xl rounded-lg border border-white/10">
+        <h1 class="text-2xl md:text-3xl font-bold mb-6 text-center text-white">Song Finder & Details</h1>
+
+        <div id="spotifyAuthArea" class="text-center mb-6">
+             <div id="spotifyStatus" class="text-yellow-300">Login to Spotify to include its data.</div>
+             <button id="spotifyLoginButton">Login to Spotify</button>
+        </div>
+
+        <div class="mb-6 space-y-4">
+            <div>
+                <label for="artistName" class="block text-sm font-medium text-gray-300 mb-1">Artist Name:</label>
+                <input type="text" id="artistName" name="artistName" placeholder="e.g., Queen" class="w-full p-3 bg-gray-700 bg-opacity-50 border border-gray-500 text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+            <div>
+                <label for="songName" class="block text-sm font-medium text-gray-300 mb-1">Song Name:</label>
+                <input type="text" id="songName" name="songName" placeholder="e.g., Bohemian Rhapsody" class="w-full p-3 bg-gray-700 bg-opacity-50 border border-gray-500 text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+        </div>
+
+        <div class="text-center mb-6">
+            <button id="searchButton" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-8 transition duration-150 ease-in-out inline-flex items-center shadow-lg">
+                Search
+                <span id="loadingIndicator" class="loader hidden"></span>
+            </button>
+        </div>
+
+        <div id="resultsArea" class="mt-6 space-y-4">
+            <div id="message" class="text-center text-gray-200"></div>
+            <ul id="suggestionsList" class="space-y-2"></ul>
+
+             <div id="songDetailsContainer" class="mt-4 hidden">
+                <div id="genreInfo">
+                    <h3 class="text-xl font-semibold text-white mb-3 border-b border-white/20 pb-2">Genre Information</h3>
+                    <div id="lastfmResult" class="api-result"></div>
+                    <div id="musicbrainzResult" class="api-result"></div>
+                    <div id="theaudiodbResult" class="api-result"></div>
+                    <div id="geniusGenreResult" class="api-result"></div>
+                    <div id="spotifyResult" class="api-result"></div> <div id="consensusResult" class="consensus-result hidden"></div>
+                </div>
+                <div id="additionalInfo" class="additional-info-section mt-6">
+                     <h3 class="text-xl font-semibold text-white mb-3 border-b border-white/20 pb-2">Additional Details</h3>
+                     <div id="keyInfo" class="info-item"></div>
+                     <div id="bpmInfo" class="info-item"></div>
+                     <div id="producersInfo" class="info-item"></div>
+                     <div id="writersInfo" class="info-item"></div>
+                     <div id="spotifyPopularityInfo" class="info-item"></div> </div>
+            </div>
+        </div>
+
+         <div class="notes-box">
+            <h4>Important Notes:</h4>
+            <ul>
+                <li>Uses Last.fm, MusicBrainz, TheAudioDB, Genius, and Spotify APIs.</li>
+                <li>Spotify integration requires user login (Implicit Grant Flow) and may require frequent re-login.</li>
+                <li>**CRITICAL:** You MUST configure the correct `YOUR_REDIRECT_URI` in the script AND in your Spotify Developer Dashboard for Spotify login to work. This file must be served from that exact URI (not `file:///`).</li>
+                <li><strong>Security Warning:</strong> API keys/tokens (Last.fm, Genius) are embedded client-side, which is insecure. Spotify Client ID is public, but user login is required.</li>
+                <li>API calls might fail due to CORS or rate limits.</li>
+                <li>MusicBrainz requires a `User-Agent` header.</li>
+                <li>Genre/details depend on data availability in each API. Key/BPM often unavailable.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const lastfmApiKey = '512b6bc9cc2d52595bc84a31409f5319';
+        const lastfmApiUrl = 'https://ws.audioscrobbler.com/2.0/';
+        const musicbrainzApiUrl = 'https://musicbrainz.org/ws/2/';
+        const musicbrainzUserAgent = 'SongGenreFinder/1.0 ( your-email@example.com )';
+        const theaudiodbApiUrl = 'https://www.theaudiodb.com/api/v1/json/2/searchtrack.php';
+        const geniusApiUrl = 'https://api.genius.com/';
+        const geniusAccessToken = 'zF6CJkDLV2sgORQ5NrR46uC5BdvudakiJJl2deTnsJ9Qjvh8-uuqz4r0BJi2oeyBGU2awUB8dA6b7Ry576hg5g'; // WARNING: INSECURE!
+        // --- Spotify API Config ---
+        const spotifyApiUrl = 'https://api.spotify.com/v1/';
+        const spotifyClientId = '0836c5636e6148d3a2c6162ab025f75f'; // Your Spotify Client ID
+        // !! IMPORTANT !! Replace with the EXACT URI you registered in Spotify Dev Dashboard
+        // Must match where this HTML file is served from (e.g., http://localhost:8000/finder.html)
+        const spotifyRedirectUri = 'YOUR_REDIRECT_URI';
+        const spotifyScopes = 'user-read-private user-read-email'; // Scopes needed (minimal for public data search)
+        let spotifyAccessToken = null; // Will hold the temporary token
+
+        // --- DOM Elements ---
+        const artistInput = document.getElementById('artistName');
+        const songInput = document.getElementById('songName');
+        const searchButton = document.getElementById('searchButton');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const messageDiv = document.getElementById('message');
+        const suggestionsList = document.getElementById('suggestionsList');
+        const songDetailsContainer = document.getElementById('songDetailsContainer');
+        const genreInfoDiv = document.getElementById('genreInfo');
+        const additionalInfoDiv = document.getElementById('additionalInfo');
+        // Genre divs
+        const lastfmResultDiv = document.getElementById('lastfmResult');
+        const musicbrainzResultDiv = document.getElementById('musicbrainzResult');
+        const theaudiodbResultDiv = document.getElementById('theaudiodbResult');
+        const geniusGenreResultDiv = document.getElementById('geniusGenreResult');
+        const spotifyResultDiv = document.getElementById('spotifyResult'); // Spotify Genre
+        const consensusResultDiv = document.getElementById('consensusResult');
+        // Additional info divs
+        const keyInfoDiv = document.getElementById('keyInfo');
+        const bpmInfoDiv = document.getElementById('bpmInfo');
+        const producersInfoDiv = document.getElementById('producersInfo');
+        const writersInfoDiv = document.getElementById('writersInfo');
+        const spotifyPopularityInfoDiv = document.getElementById('spotifyPopularityInfo'); // Spotify Popularity
+        // Spotify Auth elements
+        const spotifyAuthArea = document.getElementById('spotifyAuthArea');
+        const spotifyLoginButton = document.getElementById('spotifyLoginButton');
+        const spotifyStatus = document.getElementById('spotifyStatus');
+
+        // Generic terms set
+        const genericTerms = new Set(['music', 'all', 'seen live', 'favorite', 'favourites', 'favorite songs', 'pop', 'rock', 'electronic', 'hip hop', 'various artists', 'unknown', 'rap', 'dance pop', 'pop dance']); // Added more common ones
+
+        // --- Levenshtein Distance & Similarity --- (Unchanged)
+        function levenshteinDistance(a, b) { /* ... */ if (a.length === 0) return b.length; if (b.length === 0) return a.length; const m = []; for (let i = 0; i <= b.length; i++) m[i] = [i]; for (let j = 0; j <= a.length; j++) m[0][j] = j; for (let i = 1; i <= b.length; i++) for (let j = 1; j <= a.length; j++) { const c = (b[i - 1] === a[j - 1]) ? 0 : 1; m[i][j] = Math.min(m[i - 1][j - 1] + c, m[i][j - 1] + 1, m[i - 1][j] + 1); } return m[b.length][a.length]; }
+        function calculateSimilarity(s1, s2) { const d = levenshteinDistance(s1.toLowerCase(), s2.toLowerCase()); const maxL = Math.max(s1.length, s2.length); if (maxL === 0) return 100; return Math.max(0, Math.round(((maxL - d) / maxL) * 100)); }
+
+        // --- Helper Function for Fetch (Handles Auth for Genius & Spotify) ---
+        async function fetchData(url, options = {}, apiName = 'API') {
+            console.log(`Requesting ${apiName} URL:`, url, 'Options:', options);
+            options.headers = options.headers || {}; // Ensure headers object exists
+
+             // Add Genius Auth Header if needed
+             if (apiName.startsWith('Genius')) {
+                 if (!geniusAccessToken) throw new Error("Genius Access Token is missing.");
+                 options.headers['Authorization'] = `Bearer ${geniusAccessToken}`;
+             }
+             // Add Spotify Auth Header if needed
+             else if (apiName.startsWith('Spotify')) {
+                 if (!spotifyAccessToken) throw new Error("Spotify Access Token is missing or expired. Please login.");
+                 options.headers['Authorization'] = `Bearer ${spotifyAccessToken}`;
+             }
+             // Add MusicBrainz User-Agent
+             else if (apiName.startsWith('MusicBrainz')) {
+                  options.headers['User-Agent'] = musicbrainzUserAgent;
+             }
+
+            try {
+                const response = await fetch(url, options);
+                if (response.status === 429) throw new Error(`${apiName} error: Rate limit exceeded.`);
+                // Handle Spotify 401/403 (Token expired/invalid)
+                if (apiName.startsWith('Spotify') && (response.status === 401 || response.status === 403)) {
+                    spotifyAccessToken = null; // Clear expired token
+                    updateSpotifyStatus(); // Update UI
+                    throw new Error("Spotify token expired or invalid. Please login again.");
+                }
+                if (!response.ok) {
+                    let errorData; try { errorData = await response.json(); } catch (e) {}
+                    const errorMsg = errorData?.error?.message || errorData?.meta?.message || errorData?.message || errorData?.error || `HTTP error! Status: ${response.status}`;
+                    if (apiName === 'Last.fm (Tags)' && response.status === 404) return { error: 6, message: "Track not found on Last.fm" };
+                    if (apiName === 'Genius (Details)' && response.status === 404) return { notFound: true, message: "Song details not found on Genius." };
+                    if (apiName.startsWith('Spotify') && response.status === 404) return { notFound: true, message: "Resource not found on Spotify." }; // Handle Spotify 404
+                    throw new Error(`${apiName} error: ${errorMsg}`);
+                }
+                if (response.status === 204) return null; // Handle No Content
+                const data = await response.json();
+                console.log(`${apiName} Response:`, data);
+                // API-specific error checks in body
+                if (data.error && apiName.startsWith('Last.fm')) { if (data.error == 6) return { notFound: true, message: data.message }; throw new Error(`${apiName} error: ${data.message}`); }
+                if (data.error && apiName.startsWith('MusicBrainz')) throw new Error(`${apiName} error: ${data.error}`);
+                if (data.meta && data.meta.status >= 400 && apiName.startsWith('Genius')) throw new Error(`${apiName} error: ${data.meta.message}`);
+                // Spotify might have error object: data.error.message
+                if (data.error && apiName.startsWith('Spotify')) throw new Error(`${apiName} error: ${data.error.message}`);
+
+                return data;
+            } catch (error) {
+                console.error(`Fetch error (${apiName}):`, error);
+                if (error instanceof TypeError && error.message.includes('Failed to fetch')) throw new Error(`Could not connect to ${apiName}. Possible CORS/Network issue.`);
+                throw error; // Re-throw other errors
+            }
+        }
+
+        // --- Tag Cleaning and Normalization --- (Unchanged)
+        function cleanAndNormalizeTags(tagString) { /* ... */ if (!tagString || typeof tagString !== 'string') return []; let c = tagString.toLowerCase().replace(/[\/\-]/g, ','); return c.split(/[,;]/).map(t => t.trim()).filter(t => t && t.length > 1 && !/^\d+$/.test(t) && !genericTerms.has(t)); }
+
+        // --- API Call Functions ---
+
+        // 1. Last.fm Search - Unchanged
+        async function searchTrackLastfm(artist, track) { /* ... */ if (!lastfmApiKey) throw new Error("Last.fm API Key missing."); const p = new URLSearchParams({ method: 'track.search', artist, track, api_key: lastfmApiKey, format: 'json', limit: 5 }); const u = `${lastfmApiUrl}?${p}`; const d = await fetchData(u, {}, 'Last.fm (Search)'); return d?.results?.trackmatches?.track || []; }
+        // 2. Last.fm Get Tags - Unchanged
+        async function getTagsLastfm(artist, track) { /* ... */ if (!lastfmApiKey) return { raw: "API Key missing", cleaned: [] }; const p = new URLSearchParams({ method: 'track.getTopTags', artist, track, api_key: lastfmApiKey, format: 'json' }); const u = `${lastfmApiUrl}?${p}`; try { const d = await fetchData(u, {}, 'Last.fm (Tags)'); if (d?.notFound || d?.error == 6) return { raw: "No tags found (API)", cleaned: [] }; if (!d?.toptags?.tag || d.toptags.tag.length === 0) return { raw: "No tags found", cleaned: [] }; const r = d.toptags.tag.map(t => t.name).join(', '); return { raw: r, cleaned: cleanAndNormalizeTags(r) }; } catch (e) { return { raw: `Error: ${e.message}`, cleaned: [] }; } }
+        // 3. MusicBrainz Search ID - Unchanged
+        async function searchRecordingMusicBrainz(artist, track) { /* ... */ const q = `recording:(${encodeURIComponent(track)}) AND artist:(${encodeURIComponent(artist)})`; const p = new URLSearchParams({ query: q, fmt: 'json', limit: 1 }); const u = `${musicbrainzApiUrl}recording/?${p}`; const o = { headers: { 'User-Agent': musicbrainzUserAgent } }; try { const d = await fetchData(u, o, 'MusicBrainz (Search)'); if (d?.recordings?.length > 0) { const b = d.recordings.sort((a, b) => (b.score || 0) - (a.score || 0))[0]; return b.id; } return null; } catch (e) { console.error("MB Search Error:", e); return null; } }
+        // 4. MusicBrainz Get Tags - Unchanged
+        async function getTagsMusicBrainz(recordingId) { /* ... */ if (!recordingId) return { raw: "Recording ID not found", cleaned: [] }; const p = new URLSearchParams({ inc: 'tags+genres', fmt: 'json' }); const u = `${musicbrainzApiUrl}recording/${recordingId}?${p}`; const o = { headers: { 'User-Agent': musicbrainzUserAgent } }; try { const d = await fetchData(u, o, 'MusicBrainz (Tags)'); const rs = new Set(); if (d?.tags?.length > 0) d.tags.forEach(t => rs.add(t.name)); if (d?.genres?.length > 0) d.genres.forEach(g => rs.add(g.name)); if (rs.size === 0) return { raw: "No tags/genres found", cleaned: [] }; const r = Array.from(rs).join(', '); return { raw: r, cleaned: cleanAndNormalizeTags(r) }; } catch (e) { return { raw: `Error: ${e.message}`, cleaned: [] }; } }
+        // 5. TheAudioDB Get Tags - Unchanged
+        async function getTagsTheAudioDB(artist, track) { /* ... */ const p = new URLSearchParams({ s: artist, t: track }); const u = `${theaudiodbApiUrl}?${p}`; try { const d = await fetchData(u, {}, 'TheAudioDB'); if (!d?.track?.length > 0) return { raw: "Track not found", cleaned: [] }; const td = d.track[0]; const ct = [td.strGenre, td.strStyle].filter(Boolean).join(','); const r = [td.strGenre, td.strStyle].filter(Boolean).join(', ') || "No genre/style found"; const cl = cleanAndNormalizeTags(ct); if (cl.length === 0) { const m = r.toLowerCase().includes('no genre') ? r : "No useful genre/style found"; return { raw: m, cleaned: [] }; } return { raw: r, cleaned: [...new Set(cl)] }; } catch (e) { return { raw: `Error: ${e.message}`, cleaned: [] }; } }
+        // 6. Genius Search ID - Unchanged
+        async function searchSongGenius(artist, track) { /* ... */ if (!geniusAccessToken) throw new Error("Genius Token missing."); const q = `${track} ${artist}`; const p = new URLSearchParams({ q }); const u = `${geniusApiUrl}search?${p}`; try { const d = await fetchData(u, {}, 'Genius (Search)'); if (d?.response?.hits?.length > 0) { const pot = d.response.hits[0].result; if (pot.primary_artist.name.toLowerCase().includes(artist.toLowerCase())) return pot.id; } return null; } catch (e) { console.error("Genius Search Error:", e); return null; } }
+        // 7. Genius Get Details - Unchanged
+        async function getSongDetailsGenius(songId) { /* ... */ if (!songId) return { rawGenre: "Song ID not found", cleanedGenre: [], details: null }; const p = new URLSearchParams({ text_format: 'plain' }); const u = `${geniusApiUrl}songs/${songId}?${p}`; try { const d = await fetchData(u, {}, 'Genius (Details)'); if (d?.notFound) return { rawGenre: "Song details not found (API)", cleanedGenre: [], details: null }; if (!d?.response?.song) return { rawGenre: "Invalid response structure", cleanedGenre: [], details: null }; const s = d.response.song; const dt = {}; dt.producers = s.producer_artists?.map(p => p.name).join(', ') || null; dt.writers = s.writer_artists?.map(w => w.name).join(', ') || null; const rawT = s.tags?.map(t => t.name).join(', ') || null; const cleanT = rawT ? cleanAndNormalizeTags(rawT) : []; dt.key = s.custom_key || s.key || null; dt.bpm = s.custom_bpm || s.bpm || null; if ((!dt.key || !dt.bpm) && s.description?.plain) { const desc = s.description.plain.toLowerCase(); const kM = desc.match(/key:\s*([a-g][#b]?\s*(maj|min|major|minor)?)/i); const bM = desc.match(/bpm:\s*(\d+(\.\d+)?)/i); if (kM && !dt.key) dt.key = kM[1].trim(); if (bM && !dt.bpm) dt.bpm = bM[1].trim(); } return { rawGenre: rawT || "No tags found", cleanedGenre: cleanT, details: dt }; } catch (e) { return { rawGenre: `Error: ${e.message}`, cleanedGenre: [], details: null }; } }
+
+        // --- NEW Spotify API Functions ---
+
+        // 8. Spotify Search for Track ID and Artist ID
+        async function searchTrackSpotify(artist, track) {
+            if (!spotifyAccessToken) return null; // Need login
+            const query = `track:${track} artist:${artist}`;
+            const params = new URLSearchParams({ q: query, type: 'track', limit: 1 });
+            const url = `${spotifyApiUrl}search?${params.toString()}`;
+            try {
+                const data = await fetchData(url, {}, 'Spotify (Search)');
+                if (data?.tracks?.items?.length > 0) {
+                    const item = data.tracks.items[0];
+                    // Return track ID and the primary artist's ID
+                    return {
+                        trackId: item.id,
+                        artistId: item.artists?.[0]?.id, // Get ID of the first artist
+                        popularity: item.popularity // Also grab popularity here
+                    };
+                }
+                return null; // Not found
+            } catch (error) {
+                console.error("Spotify Search Error:", error);
+                // Don't return error structure here, just null, handle error display elsewhere if needed
+                return null;
+            }
+        }
+
+        // 9. Spotify Get Artist Details (for Genres)
+        async function getArtistDetailsSpotify(artistId) {
+            if (!spotifyAccessToken || !artistId) return { raw: artistId ? "Artist ID missing" : "Login required", cleaned: [] };
+            const url = `${spotifyApiUrl}artists/${artistId}`;
+            try {
+                const data = await fetchData(url, {}, 'Spotify (Artist Details)');
+                if (data?.genres && data.genres.length > 0) {
+                    const rawTags = data.genres.join(', ');
+                    return { raw: rawTags, cleaned: cleanAndNormalizeTags(rawTags) };
+                }
+                return { raw: "No genres found for artist", cleaned: [] };
+            } catch (error) {
+                 console.error("Spotify Artist Details Error:", error);
+                 return { raw: `Error: ${error.message}`, cleaned: [] };
+            }
+        }
+
+        // --- Spotify Authentication ---
+
+        // Function to initiate login redirect
+        function spotifyLogin() {
+            if (!spotifyClientId || spotifyRedirectUri === 'YOUR_REDIRECT_URI') {
+                 messageDiv.textContent = 'Spotify Client ID or Redirect URI is not configured in the script.';
+                 messageDiv.className = 'text-center text-red-300 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-md';
+                 console.error("Spotify config missing!");
+                 return;
+            }
+            const state = generateRandomString(16); // Basic CSRF protection
+            localStorage.setItem('spotify_auth_state', state);
+
+            let url = 'https://accounts.spotify.com/authorize';
+            url += '?response_type=token';
+            url += '&client_id=' + encodeURIComponent(spotifyClientId);
+            url += '&scope=' + encodeURIComponent(spotifyScopes);
+            url += '&redirect_uri=' + encodeURIComponent(spotifyRedirectUri);
+            url += '&state=' + encodeURIComponent(state);
+
+            window.location = url; // Redirect user to Spotify login
+        }
+
+        // Function to parse token from URL hash after redirect
+        function getAccessTokenFromUrl() {
+            // Check if running in a browser environment
+            if (typeof window === 'undefined' || !window.location || !window.location.hash) {
+                return null;
+            }
+            const hash = window.location.hash.substring(1); // Remove leading '#'
+            const params = new URLSearchParams(hash);
+            const token = params.get('access_token');
+            const state = params.get('state');
+            const storedState = localStorage.getItem('spotify_auth_state');
+
+            if (token && state && state === storedState) {
+                localStorage.removeItem('spotify_auth_state'); // Clean up state
+                // Optionally clear the hash from the URL
+                if (window.history.replaceState) {
+                     window.history.replaceState(null, '', window.location.pathname + window.location.search);
+                 } else {
+                     window.location.hash = ''; // Fallback for older browsers
+                 }
+                return token;
+            } else if (state && state !== storedState) {
+                 console.error("Spotify state mismatch - possible CSRF attack.");
+                 localStorage.removeItem('spotify_auth_state');
+            } else {
+                 const error = params.get('error');
+                 if (error) {
+                     console.error("Spotify Auth Error:", error);
+                     messageDiv.textContent = `Spotify Login Error: ${error}`;
+                     messageDiv.className = 'text-center text-red-300 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-md';
+                 }
+            }
+            return null;
+        }
+
+        // Helper to generate random string for state parameter
+        function generateRandomString(length) {
+            let text = '';
+            const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        }
+
+        // Update UI based on Spotify login status
+         function updateSpotifyStatus() {
+             if (spotifyAccessToken) {
+                 spotifyStatus.textContent = 'Logged in to Spotify.';
+                 spotifyStatus.className = 'text-green-300';
+                 spotifyLoginButton.textContent = 'Refresh Token (Re-Login)';
+                 spotifyLoginButton.onclick = spotifyLogin; // Re-login clears old token implicitly
+             } else {
+                 spotifyStatus.textContent = 'Login to Spotify to include its data.';
+                 spotifyStatus.className = 'text-yellow-300';
+                 spotifyLoginButton.textContent = 'Login to Spotify';
+                 spotifyLoginButton.onclick = spotifyLogin;
+             }
+         }
+
+        // --- Genre Comparison Logic (Includes Spotify) ---
+        function findConsensusGenre(results) {
+            const tagScores = {};
+            const tagSources = {};
+            // Now expecting 5 results: Last.fm, MusicBrainz, TheAudioDB, Genius, Spotify
+            // Check 'cleaned' for first 3, 'cleanedGenre' for Genius, 'cleaned' for Spotify
+            const validResults = results.filter(r => {
+                 if (r.status !== 'fulfilled') return false;
+                 const apiIndex = results.indexOf(r);
+                 const apiName = ['Last.fm', 'MusicBrainz', 'TheAudioDB', 'Genius', 'Spotify'][apiIndex];
+                 if (apiName === 'Genius') return r.value?.cleanedGenre?.length > 0;
+                 else return r.value?.cleaned?.length > 0;
+            });
+            const validSourceCount = validResults.length;
+
+            if (validSourceCount === 0) return { text: "No valid genre data found.", sources: "" };
+
+            validResults.forEach((result) => {
+                 const apiIndex = results.indexOf(result);
+                 const apiName = ['Last.fm', 'MusicBrainz', 'TheAudioDB', 'Genius', 'Spotify'][apiIndex];
+                 if (!apiName) return;
+
+                const tagsToProcess = apiName === 'Genius' ? result.value.cleanedGenre : result.value.cleaned;
+                const uniqueTagsInSource = new Set(tagsToProcess);
+
+                uniqueTagsInSource.forEach(tag => {
+                    tagScores[tag] = (tagScores[tag] || 0) + 1;
+                    if (!tagSources[tag]) tagSources[tag] = new Set();
+                    tagSources[tag].add(apiName);
+                });
+            });
+
+             if (Object.keys(tagScores).length === 0) return { text: "Could not determine consensus.", sources: "" };
+
+            // Calculate final scores (same logic, now potentially up to 5 sources)
+            const finalScores = Object.entries(tagScores).map(([tag, count]) => {
+                const sources = tagSources[tag]?.size || 0;
+                let score = count;
+                if (validSourceCount > 1) {
+                    if (sources > 1) score += sources * 1.5;
+                    if (sources === validSourceCount) score += validSourceCount;
+                }
+                if (genericTerms.has(tag) && Object.keys(tagScores).length > 1) score *= 0.8;
+                return { tag, score };
+            });
+
+            finalScores.sort((a, b) => b.score - a.score);
+
+            const topScore = finalScores[0].score;
+            const threshold = topScore * (validSourceCount > 1 ? 0.65 : 0.9); // Adjust threshold
+            const mostProbableTags = finalScores
+                 .filter(item => item.score >= threshold && item.score > 0)
+                 .map(item => item.tag);
+
+            const formattedTags = mostProbableTags
+                .map(tag => tag.charAt(0).toUpperCase() + tag.slice(1))
+                .join(', ');
+
+             let sourceInfo = "";
+             if (validSourceCount === 1) {
+                 const sourceName = tagSources[mostProbableTags[0]] ? Array.from(tagSources[mostProbableTags[0]])[0] : 'Unknown';
+                 sourceInfo = `(Based only on ${sourceName})`;
+             } else if (validSourceCount > 1) {
+                  sourceInfo = `(Based on ${validSourceCount} sources)`;
+             }
+
+            if (!formattedTags) return { text: "Could not determine a confident consensus.", sources: sourceInfo };
+
+            return { text: `Consensus: ${formattedTags}`, sources: sourceInfo };
+        }
+
+        // --- Display Helpers --- (displayApiResult unchanged, displayInfoItem unchanged)
+        function displayApiResult(element, apiName, promiseResult) { /* ... */ element.innerHTML = `<strong>${apiName}:</strong> `; if (promiseResult.status === 'fulfilled') { const rVal = promiseResult.value; const rawDisp = apiName === 'Genius' ? rVal?.rawGenre : rVal?.raw; if (typeof rawDisp === 'string') { const rl = rawDisp.toLowerCase(); if (rl.includes('no tag') || rl.includes('not found') || rl.startsWith('error:')) { element.innerHTML += `<span class="not-found">${rawDisp}</span>`; } else { element.innerHTML += `<span>${rawDisp}</span>`; } } else { element.innerHTML += `<span>N/A</span>`; } } else { element.innerHTML += `<span class="error">Error: ${promiseResult.reason?.message || 'Failed'}</span>`; } }
+        function displayInfoItem(element, label, value) { /* ... */ element.innerHTML = `<strong>${label}:</strong> `; if (value !== null && value !== undefined && value !== '') { element.innerHTML += `<span>${value}</span>`; } else { element.innerHTML += `<span class="not-available">N/A</span>`; } }
+
+
+        // --- Event Handlers ---
+
+        // Main search handler
+        async function handleSearch() {
+            const artist = artistInput.value.trim();
+            const song = songInput.value.trim();
+
+            // --- UI Reset --- (Clear more divs)
+            messageDiv.textContent = ''; messageDiv.className = 'text-center text-gray-200';
+            suggestionsList.innerHTML = '';
+            songDetailsContainer.classList.add('hidden'); genreInfoDiv.classList.add('hidden'); additionalInfoDiv.classList.add('hidden');
+            [lastfmResultDiv, musicbrainzResultDiv, theaudiodbResultDiv, geniusGenreResultDiv, spotifyResultDiv, // Clear spotify div too
+             consensusResultDiv, keyInfoDiv, bpmInfoDiv, producersInfoDiv, writersInfoDiv, spotifyPopularityInfoDiv] // Clear popularity div
+             .forEach(el => el.innerHTML = '');
+            consensusResultDiv.classList.add('hidden');
+            loadingIndicator.classList.remove('hidden'); searchButton.disabled = true;
+
+            // --- Input Validation ---
+            if (!artist || !song) { /* ... */ messageDiv.textContent = 'Please enter both artist and song name.'; messageDiv.className = 'text-center text-red-300 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-md'; loadingIndicator.classList.add('hidden'); searchButton.disabled = false; return; }
+
+            // --- Perform Initial Search (Last.fm for suggestions) ---
+            try {
+                messageDiv.textContent = 'Searching for potential matches (Last.fm)...'; messageDiv.className = 'text-center text-blue-300';
+                const tracks = await searchTrackLastfm(artist, song);
+                if (tracks.length === 0) { /* ... */ messageDiv.textContent = 'No tracks found matching your query on Last.fm.'; messageDiv.className = 'text-center text-yellow-300 p-3 bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-md'; loadingIndicator.classList.add('hidden'); searchButton.disabled = false; return; }
+
+                // --- Process and Display Suggestions ---
+                const suggestions = tracks.map(track => { /* ... */ const cI = `${artist} - ${song}`; const cR = `${track.artist} - ${track.name}`; const sim = calculateSimilarity(cI, cR); return { ...track, similarity: sim, mbid_recording: track.mbid }; }).sort((a, b) => b.similarity - a.similarity);
+                messageDiv.textContent = 'Select the correct track below to fetch details:'; messageDiv.className = 'text-center text-gray-200';
+                suggestionsList.innerHTML = '';
+
+                suggestions.forEach(track => {
+                    const listItem = document.createElement('li'); /* ... */ listItem.className = 'suggestion-item rounded-md'; listItem.innerHTML = `<span><span class="track-artist">${track.artist}</span> - ${track.name}</span><span class="match-percent">${track.similarity}% match</span>`;
+
+                    // --- Click Handler for Suggestions (Fetches from all APIs) ---
+                    listItem.addEventListener('click', async () => {
+                        messageDiv.textContent = `Fetching details for "${track.name}"...`; messageDiv.className = 'text-center text-blue-300';
+                        suggestionsList.innerHTML = '';
+                        songDetailsContainer.classList.remove('hidden'); genreInfoDiv.classList.remove('hidden'); additionalInfoDiv.classList.remove('hidden');
+                        [lastfmResultDiv, musicbrainzResultDiv, theaudiodbResultDiv, geniusGenreResultDiv, spotifyResultDiv, consensusResultDiv, keyInfoDiv, bpmInfoDiv, producersInfoDiv, writersInfoDiv, spotifyPopularityInfoDiv].forEach(el => el.innerHTML = '');
+                        consensusResultDiv.classList.add('hidden');
+                        loadingIndicator.classList.remove('hidden'); searchButton.disabled = true;
+
+                        try {
+                            // --- Define Promises for API Calls ---
+                            const musicBrainzPromise = searchRecordingMusicBrainz(track.artist, track.name).then(mbid => getTagsMusicBrainz(mbid)).catch(e => ({ raw: `MB Error: ${e.message}`, cleaned: [] }));
+                            const geniusDetailsPromise = searchSongGenius(track.artist, track.name).then(songId => getSongDetailsGenius(songId)).catch(e => ({ rawGenre: `Genius Error: ${e.message}`, cleanedGenre: [], details: null }));
+
+                            // Spotify requires searching track first, then getting artist genres
+                            let spotifyPopularity = null; // Variable to hold popularity
+                            const spotifyGenrePromise = searchTrackSpotify(track.artist, track.name)
+                                .then(spotifyTrackInfo => {
+                                    if (spotifyTrackInfo?.artistId) {
+                                        spotifyPopularity = spotifyTrackInfo.popularity; // Store popularity
+                                        return getArtistDetailsSpotify(spotifyTrackInfo.artistId); // Fetch artist genres
+                                    } else if (spotifyAccessToken) {
+                                         return { raw: "Track not found on Spotify", cleaned: [] }; // Return structured not found
+                                    } else {
+                                         return { raw: "Spotify login required", cleaned: [] }; // Indicate login needed
+                                    }
+                                })
+                                .catch(e => ({ raw: `Spotify Error: ${e.message}`, cleaned: [] })); // Catch errors in the chain
+
+
+                            // Order: Last.fm, MusicBrainz, TheAudioDB, Genius, Spotify
+                            const promises = [
+                                getTagsLastfm(track.artist, track.name),
+                                musicBrainzPromise,
+                                getTagsTheAudioDB(track.artist, track.name),
+                                geniusDetailsPromise,
+                                spotifyGenrePromise // Add promise for Spotify genre
+                            ];
+
+                            const results = await Promise.allSettled(promises);
+                            console.log("All API results (settled):", results);
+
+                            // --- Display Individual API Results (Genre) ---
+                            displayApiResult(lastfmResultDiv, 'Last.fm', results[0]);
+                            displayApiResult(musicbrainzResultDiv, 'MusicBrainz', results[1]);
+                            displayApiResult(theaudiodbResultDiv, 'TheAudioDB', results[2]);
+                            displayApiResult(geniusGenreResultDiv, 'Genius', results[3]);
+                            displayApiResult(spotifyResultDiv, 'Spotify', results[4]); // Display Spotify genre raw result
+
+                            // --- Calculate and Display Consensus Genre ---
+                            const consensusResult = findConsensusGenre(results);
+                            consensusResultDiv.innerHTML = `<div class="label">Genre Consensus</div><span>${consensusResult.text}</span><div class="source-info">${consensusResult.sources}</div>`;
+                            consensusResultDiv.classList.remove('hidden');
+
+                             // --- Display Additional Details ---
+                             const geniusData = results[3].status === 'fulfilled' ? results[3].value.details : null;
+                             displayInfoItem(keyInfoDiv, 'Key', geniusData?.key);
+                             displayInfoItem(bpmInfoDiv, 'BPM', geniusData?.bpm);
+                             displayInfoItem(producersInfoDiv, 'Producers', geniusData?.producers);
+                             displayInfoItem(writersInfoDiv, 'Writers', geniusData?.writers);
+                             // Display Spotify Popularity (fetched earlier)
+                             displayInfoItem(spotifyPopularityInfoDiv, 'Popularity', spotifyPopularity !== null ? `${spotifyPopularity}/100 (Spotify)` : null);
+
+                            messageDiv.textContent = `Showing details for: ${track.artist} - ${track.name}`;
+                            messageDiv.className = 'text-center text-green-300 p-3 bg-green-900 bg-opacity-30 border border-green-500 rounded-md';
+
+                        } catch (error) { /* ... */ console.error("Err fetch/display:", error); messageDiv.textContent = `Unexpected error: ${error.message}`; messageDiv.className = 'text-center text-red-300 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-md'; }
+                        finally { loadingIndicator.classList.add('hidden'); searchButton.disabled = false; }
+                    });
+                    suggestionsList.appendChild(listItem);
+                });
+            } catch (error) { /* ... */ console.error("Initial search failed:", error); messageDiv.textContent = `Initial search error: ${error.message}`; messageDiv.className = 'text-center text-red-300 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-md'; }
+            finally { /* ... */ if (suggestionsList.children.length > 0 || messageDiv.textContent.includes('Error') || messageDiv.textContent.includes('No tracks found')) { loadingIndicator.classList.add('hidden'); } if (!searchButton.disabled || !messageDiv.textContent.includes('Fetching')) { searchButton.disabled = false; } }
+        }
+
+        // --- Initial Setup ---
+        window.onload = () => {
+            // Check for access token in URL after redirect
+            spotifyAccessToken = getAccessTokenFromUrl();
+            updateSpotifyStatus(); // Update UI based on token presence
+
+            // Attach event listeners
+            searchButton.addEventListener('click', handleSearch);
+            artistInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); searchButton.click(); } });
+            songInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); searchButton.click(); } });
+            spotifyLoginButton.addEventListener('click', spotifyLogin); // Attach login handler
+        };
+
+    </script>
+</body>
+</html>
