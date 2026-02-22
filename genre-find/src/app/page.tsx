@@ -55,7 +55,7 @@ export default function HomePage() {
           DJ Metadata Hub
         </p>
         <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white">
-          Track<span className="text-indigo-400">Source</span>
+          <span className="text-indigo-400">ID</span>entification<span className="text-indigo-400">Nation</span>
         </h1>
         <p className="mt-3 text-slate-400 text-sm max-w-sm mx-auto">
           BPM · Camelot Key · Energy · Lyrics · Backstory · Similar Tracks

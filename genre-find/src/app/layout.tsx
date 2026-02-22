@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TrackSource — DJ Metadata Hub",
+  title: "IDentificationNation — DJ Metadata Hub",
   description:
-    "A comprehensive metadata hub for DJs and producers. Aggregates BPM, Camelot key, energy, lyrics, backstory and more.",
+    "IDentificationNation: a comprehensive metadata hub for DJs and producers. Aggregates BPM, Camelot key, energy, lyrics, backstory and more.",
 };
 
 export default function RootLayout({
